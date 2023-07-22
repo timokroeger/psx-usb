@@ -1,0 +1,9 @@
+wireless receiver:
+https://steamcommunity.com/app/353380/discussions/6/3554966516820346816/
+
+unknown discriptor comparison:
+
+10 01 01 24 81 14 03 00 03 13 01 00 03 00        1.14    gb2040
+00 01 01 25 81 14 00 00 00 00 13 01 08 00 00     1.14    https://pastebin.com/aF8tDkji
+00 01 01 25 81 14 00 00 00 00 13 01 08 00 00     1.14    https://gist.github.com/DJm00n/a6bbcb810879daa9354dee4a02a6b34e
+00 01 01 25 81 14 00 00 00 00 13 05 08 00 00     1.10    white

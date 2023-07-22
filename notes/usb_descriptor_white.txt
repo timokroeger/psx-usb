@@ -1,0 +1,73 @@
+    ---------------------- Device Descriptor ----------------------
+bLength                  : 0x12 (18 bytes)
+bDescriptorType          : 0x01 (Device Descriptor)
+bcdUSB                   : 0x200 (USB Version 2.0) -> but device is Full-Speed only
+bDeviceClass             : 0xFF (Vendor Specific)
+bDeviceSubClass          : 0xFF
+bDeviceProtocol          : 0xFF
+bMaxPacketSize0          : 0x40 (64 bytes)
+idVendor                 : 0x045E (Microsoft Corporation)
+idProduct                : 0x028E
+bcdDevice                : 0x0110
+iManufacturer            : 0x01 (String Descriptor 1)
+ Language 0x0409         : "ZhiXu"
+iProduct                 : 0x02 (String Descriptor 2)
+ Language 0x0409         : "Controller"
+iSerialNumber            : 0x00 (No String Descriptor)
+bNumConfigurations       : 0x01 (1 Configuration)
+Data (HexDump)           : 12 01 00 02 FF FF FF 40 5E 04 8E 02 10 01 01 02   .......@^.......
+                           00 01                                             ..
+
+    ------------------ Configuration Descriptor -------------------
+bLength                  : 0x09 (9 bytes)
+bDescriptorType          : 0x02 (Configuration Descriptor)
+wTotalLength             : 0x0031 (49 bytes)
+bNumInterfaces           : 0x01 (1 Interface)
+bConfigurationValue      : 0x01 (Configuration 1)
+iConfiguration           : 0x00 (No String Descriptor)
+bmAttributes             : 0x80
+ D7: Reserved, set 1     : 0x01
+ D6: Self Powered        : 0x00 (no)
+ D5: Remote Wakeup       : 0x00 (no)
+ D4..0: Reserved, set 0  : 0x00
+MaxPower                 : 0x32 (100 mA)
+Data (HexDump)           : 09 02 31 00 01 01 00 80 32 09 04 00 00 02 FF 5D   ..1.....2......]
+                           01 00 11 21 00 01 01 25 81 14 00 00 00 00 13 05   ...!...%........
+                           08 00 00 07 05 81 03 20 00 01 07 05 05 03 20 00   ....... ...... .
+                           01                                                .
+
+        ---------------- Interface Descriptor -----------------
+bLength                  : 0x09 (9 bytes)
+bDescriptorType          : 0x04 (Interface Descriptor)
+bInterfaceNumber         : 0x00 (Interface 0)
+bAlternateSetting        : 0x00
+bNumEndpoints            : 0x02 (2 Endpoints)
+bInterfaceClass          : 0xFF (Vendor Specific)
+bInterfaceSubClass       : 0x5D
+bInterfaceProtocol       : 0x01
+iInterface               : 0x00 (No String Descriptor)
+Data (HexDump)           : 09 04 00 00 02 FF 5D 01 00                        ......]..
+
+        ----------------- Unknown Descriptor ------------------
+bLength                  : 0x11 (17 bytes)
+bDescriptorType          : 0x21
+Data (HexDump)           : 11 21 00 01 01 25 81 14 00 00 00 00 13 05 08 00 
+                           00 
+
+        ----------------- Endpoint Descriptor -----------------
+bLength                  : 0x07 (7 bytes)
+bDescriptorType          : 0x05 (Endpoint Descriptor)
+bEndpointAddress         : 0x81 (Direction=IN EndpointID=1)
+bmAttributes             : 0x03 (TransferType=Interrupt)
+wMaxPacketSize           : 0x0020 (32 bytes)
+bInterval                : 0x01 (1 ms)
+Data (HexDump)           : 07 05 81 03 20 00 01                              .... ..
+
+        ----------------- Endpoint Descriptor -----------------
+bLength                  : 0x07 (7 bytes)
+bDescriptorType          : 0x05 (Endpoint Descriptor)
+bEndpointAddress         : 0x05 (Direction=OUT EndpointID=5)
+bmAttributes             : 0x03 (TransferType=Interrupt)
+wMaxPacketSize           : 0x0020 (32 bytes)
+bInterval                : 0x01 (1 ms)
+Data (HexDump)           : 07 05 05 03 20 00 01                              .... ..
