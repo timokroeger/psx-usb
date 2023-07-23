@@ -3,9 +3,9 @@
 #![feature(type_alias_impl_trait)]
 
 use core::cell::Cell;
+use core::pin::pin;
 
 use defmt::*;
-use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::pio::{self, Direction, Pio, ShiftConfig, ShiftDirection};
@@ -90,7 +90,7 @@ fn build_hid_controller<'d, D: Driver<'d>>(
     hid::HidWriter::new(builder, state, config)
 }
 
-async fn run_controller(mut c: Controller<'_>, data: &ControllerData) {
+async fn run_controller(mut c: Controller<'_>, data: &ControllerData) -> ! {
     loop {
         let mut data = data.get();
         // PSX has buttons as active low
@@ -101,8 +101,8 @@ async fn run_controller(mut c: Controller<'_>, data: &ControllerData) {
     }
 }
 
-#[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+#[cortex_m_rt::entry]
+fn main() -> ! {
     let p = embassy_rp::init(Default::default());
     let driver = usb::Driver::new(p.USB, Irqs);
 
@@ -151,16 +151,16 @@ async fn main(_spawner: Spawner) {
     let data = &[CONTROLLER_DATA_INIT; 4];
 
     // USB
-    let fut = usb.run();
+    let usb = pin!(async { usb.run().await });
 
     // Controllers
-    let fut = join(fut, async move { run_controller(c0, &data[0]).await });
-    let fut = join(fut, async move { run_controller(c1, &data[1]).await });
-    let fut = join(fut, async move { run_controller(c2, &data[2]).await });
-    let fut = join(fut, async move { run_controller(c3, &data[3]).await });
+    let c0 = pin!(async move { run_controller(c0, &data[0]).await });
+    let c1 = pin!(async move { run_controller(c1, &data[1]).await });
+    let c2 = pin!(async move { run_controller(c2, &data[2]).await });
+    let c3 = pin!(async move { run_controller(c3, &data[3]).await });
 
     // PSX protocol: SPI with LSB first and special ack signal
-    let fut = join(fut, async move {
+    let psx_spi = pin!(async move {
         let Pio {
             mut common,
             irq_flags,
@@ -259,7 +259,7 @@ async fn main(_spawner: Spawner) {
         }
     });
 
-    fut.await;
+    lilos::exec::run_tasks(&mut [usb, c0, c1, c2, c3, psx_spi], lilos::exec::ALL_TASKS)
 }
 
 #[defmt::panic_handler]
