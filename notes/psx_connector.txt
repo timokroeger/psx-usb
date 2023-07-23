@@ -6,6 +6,6 @@ console | blueretro | label | rp
 4 GND   |           |       |
 5 3.5V  |           |       |
 6 DTR   | 10        | IO34  | 5
-7 SCK   | 24        | IO33  | 
+7 SCK   | 24        | IO33  | 2
 8 INT   |           |       |
 9 DSR   | 3         | IO21  | 6
