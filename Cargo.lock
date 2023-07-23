@@ -263,9 +263,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.8.1"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "embassy-embedded-hal"
@@ -732,10 +732,10 @@ checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "lilos"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23f903cdd21f2e62eb2e1eea677bd65cdff8808fa0949da130e68cf8f84a9068"
+version = "1.0.0-pre.0"
+source = "git+https://github.com/cbiffle/lilos?rev=b1dba11a500c4d4d57ce6915decf54ad80ed0029#b1dba11a500c4d4d57ce6915decf54ad80ed0029"
 dependencies = [
+ "cfg-if",
  "cortex-m",
  "cortex-m-rt",
  "pin-project-lite",
@@ -996,9 +996,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.31"
+version = "1.0.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fe8a65d69dd0808184ebb5f836ab526bb259db23c657efa38711b1072ee47f0"
+checksum = "50f3b39ccfb720540debaa0164757101c08ecb8d326b15358ce76a62c7e85965"
 dependencies = [
  "proc-macro2",
 ]
@@ -1477,13 +1477,3 @@ name = "windows_x86_64_msvc"
 version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
-
-[[patch.unused]]
-name = "embassy-executor"
-version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy/?rev=4d1d125f4157084668a949f9bc24e4417628f9fe#4d1d125f4157084668a949f9bc24e4417628f9fe"
-
-[[patch.unused]]
-name = "lilos"
-version = "1.0.0-pre.0"
-source = "git+https://github.com/cbiffle/lilos?rev=b1dba11a500c4d4d57ce6915decf54ad80ed0029#b1dba11a500c4d4d57ce6915decf54ad80ed0029"
