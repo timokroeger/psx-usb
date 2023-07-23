@@ -114,17 +114,11 @@ fn main() -> ! {
     config.max_power = 500;
     config.max_packet_size_0 = 64;
 
-    // Required for Windows support.
-    config.composite_with_iads = true;
-    config.device_class = 0xEF;
-    config.device_sub_class = 0x02;
-    config.device_protocol = 0x01;
-
     // Create embassy-usb DeviceBuilder using the driver and config.
     // It needs some buffers for building the descriptors.
-    let mut device_descriptor = [0; 256];
-    let mut config_descriptor = [0; 256];
-    let mut bos_descriptor = [0; 256];
+    let mut device_descriptor = [0; 20];
+    let mut config_descriptor = [0; 112];
+    let mut bos_descriptor = [0; 12];
     let mut control_buf = [0; 64];
 
     let mut s0 = hid::State::new();
