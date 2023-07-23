@@ -74,7 +74,7 @@ fn build_hid_controller<'d, D: Driver<'d>>(
             0xc0,               // END_COLLECTION
         ],
         request_handler: None,
-        poll_ms: 2,
+        poll_ms: 1,
         max_packet_size: 8,
     };
     hid::HidWriter::new(builder, state, config)
@@ -117,13 +117,13 @@ async fn poll_psx(
     let mut response = [0x0_u8; 35];
     let rx_fut = rx.dma_pull(rx_dma.into_ref(), &mut response);
 
-    let _ = with_timeout(Duration::from_micros(1800), join(tx_fut, rx_fut)).await;
-    //debug!("{=[u8]:X}", response);
+    let _ = with_timeout(Duration::from_micros(900), join(tx_fut, rx_fut)).await;
 
     sm0.set_enable(false);
 
+    //debug!("{=[u8]:X}", response);
     if response[1] == 0x80 && response[2] == 0x5A {
-        Some(unwrap!(response[3..32].try_into()))
+        Some(unwrap!(response[3..].try_into()))
     } else {
         None
     }
@@ -159,8 +159,8 @@ fn main() -> ! {
     config.use_program(&common.load_program(&psx_spi), &[&sck_clk]);
     config.set_in_pins(&[&rxd_miso]);
     config.set_out_pins(&[&txd_mosi]);
-    // 1MHz PIO clock gives SPI frequency of 250kHz
-    config.clock_divider = (U56F8!(125_000_000) / U56F8!(1_000_000)).to_fixed();
+    // 2MHz PIO clock gives SPI frequency of 500kHz
+    config.clock_divider = (U56F8!(125_000_000) / U56F8!(2_000_000)).to_fixed();
     // LSB first
     config.shift_in = ShiftConfig {
         threshold: 32,
@@ -244,20 +244,22 @@ fn main() -> ! {
     let psx_spi = pin!(async move {
         let mut led = Output::new(p.PIN_25, Level::Low);
 
-        let mut ticker = Ticker::every(Duration::from_millis(2));
+        let mut ticker = Ticker::every(Duration::from_millis(1));
         loop {
             ticker.next().await;
+            led.set_low();
+
             dtr_cs.set_low();
             let poll_data = poll_psx(&mut sm0, &irq_flags, &mut p.DMA_CH0, &mut p.DMA_CH1).await;
             dtr_cs.set_high();
 
             if let Some(poll_data) = poll_data {
+                led.set_high();
+
                 controller_data[0].set(poll_data[2..8].try_into().unwrap());
                 controller_data[1].set(poll_data[10..16].try_into().unwrap());
                 controller_data[2].set(poll_data[18..24].try_into().unwrap());
                 controller_data[3].set(poll_data[26..32].try_into().unwrap());
-
-                led.toggle();
             }
         }
     });
