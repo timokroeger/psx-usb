@@ -215,14 +215,6 @@ async fn main(_spawner: Spawner) {
         let mut rx_dma = p.DMA_CH0.into_ref();
         let mut tx_dma = p.DMA_CH1.into_ref();
 
-        let cmd_part1: [u8; 3] = [0x01, 0x42, 0x01];
-        let cmd_part2: [u8; 32] = [
-            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 1
-            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 2
-            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 3
-            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 4
-        ];
-
         let mut ticker = Ticker::every(Duration::from_millis(2));
         loop {
             ticker.next().await;
@@ -231,31 +223,33 @@ async fn main(_spawner: Spawner) {
 
             sm0.clear_fifos();
             irq_flags.set(0); // ACK flag
-            sm0.tx().push(cmd_part1[0].into());
-            sm0.tx().push(cmd_part1[1].into());
-            sm0.tx().push(cmd_part1[2].into());
             sm0.set_enable(true);
 
-            let mut rsp_part1 = [0x55_u8; 3];
-            let _ = with_timeout(
-                Duration::from_millis(1),
-                sm0.rx().dma_pull(rx_dma.reborrow(), &mut rsp_part1),
-            )
-            .await;
+            let (rx, tx) = sm0.rx_tx();
 
-            debug!("rsp_part1 = {=[u8]:X}", rsp_part1);
-            if rsp_part1[1] == 0x80 && rsp_part1[2] == 0x5A {
-                let mut rsp_part2 = [0_u8; 32];
+            let command = [
+                0x01_u8, // controller (not memory card)
+                0x42,    // poll
+                0x01,    // multitap
+                0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 1
+                0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 2
+                0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 3
+                0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 4
+            ];
+            let tx_fut = tx.dma_push(tx_dma.reborrow(), &command);
 
-                let (rx, tx) = sm0.rx_tx();
-                let rx_fut = rx.dma_pull(rx_dma.reborrow(), &mut rsp_part2);
-                let tx_fut = tx.dma_push(tx_dma.reborrow(), &cmd_part2);
-                let _ = with_timeout(Duration::from_micros(1800), join(tx_fut, rx_fut)).await;
+            let mut response = [0x0_u8; 35];
+            let rx_fut = rx.dma_pull(rx_dma.reborrow(), &mut response);
 
-                data[0].set(rsp_part2[2..8].try_into().unwrap());
-                data[1].set(rsp_part2[10..16].try_into().unwrap());
-                data[2].set(rsp_part2[18..24].try_into().unwrap());
-                data[3].set(rsp_part2[26..32].try_into().unwrap());
+            let _ = with_timeout(Duration::from_micros(1800), join(tx_fut, rx_fut)).await;
+            //debug!("{=[u8]:X}", response);
+
+            if response[1] == 0x80 && response[2] == 0x5A {
+                let response = &response[3..];
+                data[0].set(response[2..8].try_into().unwrap());
+                data[1].set(response[10..16].try_into().unwrap());
+                data[2].set(response[18..24].try_into().unwrap());
+                data[3].set(response[26..32].try_into().unwrap());
 
                 led.toggle();
             }
