@@ -8,4 +8,4 @@ console | blueretro | label | rp
 6 DTR   | 10        | IO34  | 5
 7 SCK   | 24        | IO33  | 
 8 INT   |           |       |
-9 DSR   | 3         | IO21  |
+9 DSR   | 3         | IO21  | 6

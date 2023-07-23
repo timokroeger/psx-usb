@@ -1,0 +1,16 @@
+.program spi
+.side_set 1
+
+    wait 1 irq 0    side 1      ; wait for ack
+    pull noblock    side 1
+bit:
+    out pins, 1     side 0 [1]
+    in pins, 1      side 1
+    jmp !osre bit   side 1
+    in null, 24     side 1      ; auto push
+
+.program ack
+
+    wait 1 pin 0
+    wait 0 pin 0
+    irq 0
