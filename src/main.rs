@@ -13,7 +13,7 @@ use embassy_rp::relocate::RelocatedProgram;
 use embassy_rp::{bind_interrupts, peripherals, usb, Peripheral};
 use embassy_time::{with_timeout, Duration, Ticker};
 use embassy_usb::class::hid;
-use embassy_usb::driver::Driver;
+use embassy_usb::driver::{Driver, EndpointIn};
 use fixed::traits::ToFixed;
 use fixed_macro::types::U56F8;
 use {defmt_rtt as _, panic_probe as _};
@@ -196,15 +196,16 @@ fn main() -> ! {
 
     // The state must be defined before the builder for correct drop order.
     // Otherwise the compiler fails to see that the state lives long enough.
-    let mut s0 = hid::State::new();
-    let mut s1 = hid::State::new();
-    let mut s2 = hid::State::new();
-    let mut s3 = hid::State::new();
+    // let mut s0 = hid::State::new();
+    // let mut s1 = hid::State::new();
+    // let mut s2 = hid::State::new();
+    // let mut s3 = hid::State::new();
 
-    let mut config = embassy_usb::Config::new(0x0000, 0x0000);
-    config.device_release = 0x0000;
-    config.manufacturer = Some("Timo Kröger");
-    config.product = Some("psx-usb");
+    let mut config = embassy_usb::Config::new(0x045E, 0x028E);
+    config.device_release = 0x0114;
+    config.manufacturer = Some("©Microsoft Corporation");
+    config.product = Some("Controller");
+    config.serial_number = Some("04B229A");
     config.max_power = 500;
     config.max_packet_size_0 = 64;
 
@@ -221,10 +222,38 @@ fn main() -> ! {
         &mut bos_descriptor,
         &mut control_buf,
     );
-    let c0 = build_hid_controller(&mut builder, &mut s0);
-    let c1 = build_hid_controller(&mut builder, &mut s1);
-    let c2 = build_hid_controller(&mut builder, &mut s2);
-    let c3 = build_hid_controller(&mut builder, &mut s3);
+    // let c0 = build_hid_controller(&mut builder, &mut s0);
+    // let c1 = build_hid_controller(&mut builder, &mut s1);
+    // let c2 = build_hid_controller(&mut builder, &mut s2);
+    // let c3 = build_hid_controller(&mut builder, &mut s3);
+
+    const CLASS_VENDOR: u8 = 0xFF;
+    const SUBCLASS_XINPUT: u8 = 0x5D;
+    const PROTOCOL_WIRED: u8 = 0x01;
+    //const PROTOCOL_WIRELESS: u8 = 0x81;
+    let mut function = builder.function(CLASS_VENDOR, SUBCLASS_XINPUT, PROTOCOL_WIRED);
+    let mut interface = function.interface();
+    let mut alt = interface.alt_setting(CLASS_VENDOR, SUBCLASS_XINPUT, PROTOCOL_WIRED, None);
+
+    // Unknown descriptor
+    // https://www.partsnotincluded.com/understanding-the-xbox-360-wired-controllers-usb-data/
+    alt.descriptor(
+        0x21,
+        &[
+            0x00, 0x01, 0x01, 0x25, // unknown
+            0x81, // IN endpoint
+            0x14, // IN data size
+            0x00, 0x00, 0x00, 0x00, 0x13, // unknown
+            0x01, // OUT endpoint
+            0x08, // OUT data size
+            0x00, 0x00, // unknown
+        ],
+    );
+
+    let mut ep_in = alt.endpoint_interrupt_in(32, 4);
+    let _ep_out = alt.endpoint_interrupt_out(32, 8);
+
+    drop(function);
 
     let mut usb = builder.build();
 
@@ -235,10 +264,64 @@ fn main() -> ! {
     let controller_data = &[CONTROLLER_DATA_INIT; 4];
 
     // Controllers
-    let c0 = pin!(async move { run_controller(c0, &controller_data[0]).await });
-    let c1 = pin!(async move { run_controller(c1, &controller_data[1]).await });
-    let c2 = pin!(async move { run_controller(c2, &controller_data[2]).await });
-    let c3 = pin!(async move { run_controller(c3, &controller_data[3]).await });
+    // let c0 = pin!(async move { run_controller(c0, &controller_data[0]).await });
+    // let c1 = pin!(async move { run_controller(c1, &controller_data[1]).await });
+    // let c2 = pin!(async move { run_controller(c2, &controller_data[2]).await });
+    // let c3 = pin!(async move { run_controller(c3, &controller_data[3]).await });
+
+    let c0 = pin!(async move {
+        loop {
+            let psx_data = controller_data[0].get();
+            let mut xinput_data = [0_u8; 20];
+
+            xinput_data[0] = 0; // Message type
+            xinput_data[1] = 20; // Length
+
+            let map_bit = |psx_byte: u8, from_bit, to_bit| {
+                if psx_byte & (1_u8 << from_bit) == 0_u8 {
+                    1_u8 << to_bit
+                } else {
+                    0
+                }
+            };
+
+            xinput_data[2] |= map_bit(psx_data[0], 4, 0); // dpad up
+            xinput_data[2] |= map_bit(psx_data[0], 6, 1); // dpad down
+            xinput_data[2] |= map_bit(psx_data[0], 7, 2); // dpad left
+            xinput_data[2] |= map_bit(psx_data[0], 5, 3); // dpad right
+            xinput_data[2] |= map_bit(psx_data[0], 3, 4); // start
+            xinput_data[2] |= map_bit(psx_data[0], 0, 5); // select
+            xinput_data[2] |= map_bit(psx_data[0], 1, 6); // L3
+            xinput_data[2] |= map_bit(psx_data[0], 2, 7); // R3
+
+            xinput_data[3] |= map_bit(psx_data[1], 2, 0); // L1
+            xinput_data[3] |= map_bit(psx_data[1], 3, 1); // R1
+            xinput_data[3] |= map_bit(psx_data[1], 6, 4); // A
+            xinput_data[3] |= map_bit(psx_data[1], 5, 5); // B
+            xinput_data[3] |= map_bit(psx_data[1], 7, 6); // X
+            xinput_data[3] |= map_bit(psx_data[1], 4, 7); // Y
+
+            xinput_data[4] = map_bit(psx_data[1], 0, 0) * 0xFF; // L2
+            xinput_data[5] = map_bit(psx_data[1], 1, 0) * 0xFF; // R2
+
+            let scale_axis = |psx_axis: u8, invert: bool| {
+                let mut xinput_axis = ((i32::from(psx_axis) - 0x80) * 256)
+                    .clamp(i16::MIN.into(), i16::MAX.into())
+                    as i16;
+                if invert {
+                    xinput_axis = xinput_axis.saturating_neg();
+                }
+                xinput_axis.to_le_bytes()
+            };
+            [xinput_data[6], xinput_data[7]] = scale_axis(psx_data[4], false);
+            [xinput_data[8], xinput_data[9]] = scale_axis(psx_data[5], true);
+            [xinput_data[10], xinput_data[11]] = scale_axis(psx_data[2], false);
+            [xinput_data[12], xinput_data[13]] = scale_axis(psx_data[3], true);
+
+            //debug!("data={=[u8]:X}", data);
+            unwrap!(ep_in.write(xinput_data.as_ref()).await);
+        }
+    });
 
     // PSX protocol: SPI with LSB first and special ack signal
     let psx_spi = pin!(async move {
@@ -268,7 +351,10 @@ fn main() -> ! {
         }
     });
 
-    lilos::exec::run_tasks(&mut [usb, c0, c1, c2, c3, psx_spi], lilos::exec::ALL_TASKS)
+    lilos::exec::run_tasks(
+        &mut [usb, c0, /*c1, c2, c3,*/ psx_spi],
+        lilos::exec::ALL_TASKS,
+    )
 }
 
 #[defmt::panic_handler]
