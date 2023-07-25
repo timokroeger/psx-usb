@@ -244,7 +244,8 @@ fn main() -> ! {
     let psx_spi = pin!(async move {
         let mut led = Output::new(p.PIN_25, Level::Low);
 
-        let mut ticker = Ticker::every(Duration::from_millis(1));
+        let mut ticker = Ticker::every(Duration::from_millis(2));
+        let mut fail_count = 0;
         loop {
             ticker.next().await;
             led.set_low();
@@ -260,6 +261,9 @@ fn main() -> ! {
                 controller_data[1].set(poll_data[10..16].try_into().unwrap());
                 controller_data[2].set(poll_data[18..24].try_into().unwrap());
                 controller_data[3].set(poll_data[26..32].try_into().unwrap());
+            } else {
+                fail_count += 1;
+                warn!("PSX SPI fail_count={=usize}", fail_count);
             }
         }
     });
