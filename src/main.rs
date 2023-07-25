@@ -2,76 +2,32 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use core::cell::Cell;
+mod xinput;
+
 use core::pin::pin;
 
-use defmt::{assert, assert_eq, *};
+use defmt::*;
 use embassy_futures::join::join;
 use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::pio::{self, Direction, IrqFlags, Pio, ShiftConfig, ShiftDirection, StateMachine};
 use embassy_rp::relocate::RelocatedProgram;
 use embassy_rp::{bind_interrupts, peripherals, usb, Peripheral};
 use embassy_time::{with_timeout, Duration, Ticker};
-use embassy_usb::driver::{Driver, Endpoint, EndpointIn};
 use fixed::traits::ToFixed;
 use fixed_macro::types::U56F8;
+use xinput::{SerialNumberHandler, State, XInput};
 use {defmt_rtt as _, panic_probe as _};
-
-type PsxData = Cell<[u8; 6]>;
-const PSX_DATA_INIT: PsxData = PsxData::new([0xFF, 0xFF, 0x80, 0x80, 0x80, 0x80]);
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<peripherals::USB>;
     PIO0_IRQ_0 => pio::InterruptHandler<peripherals::PIO0>;
 });
 
-struct XInput<'d, D: Driver<'d>> {
-    ep_in: D::EndpointIn,
-    ep_out: D::EndpointOut,
-}
+const CONTROLLER_STATE_INIT: State = State::new();
+static CONTROLLER_STATE: [State; 4] = [CONTROLLER_STATE_INIT; 4];
 
-impl<'d, D: Driver<'d>> XInput<'d, D> {
-    fn new(builder: &mut embassy_usb::Builder<'d, D>, ep: u8) -> Self {
-        const CLASS_VENDOR: u8 = 0xFF;
-        const SUBCLASS_XINPUT: u8 = 0x5D;
-        const PROTOCOL_WIRED: u8 = 0x01;
-        //const PROTOCOL_WIRELESS: u8 = 0x81;
-        let mut function = builder.function(CLASS_VENDOR, SUBCLASS_XINPUT, PROTOCOL_WIRED);
-        let mut interface = function.interface();
-        let mut alt = interface.alt_setting(CLASS_VENDOR, SUBCLASS_XINPUT, PROTOCOL_WIRED, None);
-
-        let ep_in = 0x80 + ep;
-        let ep_out = ep;
-
-        // Unknown descriptor
-        // https://www.partsnotincluded.com/understanding-the-xbox-360-wired-controllers-usb-data/
-        alt.descriptor(
-            0x21,
-            &[
-                0x00, 0x01, 0x01, 0x25,  // unknown
-                ep_in, // IN endpoint
-                0x14,  // IN data size
-                0x00, 0x00, 0x00, 0x00, 0x13,   // unknown
-                ep_out, // OUT endpoint
-                0x08,   // OUT data size
-                0x00, 0x00, // unknown
-            ],
-        );
-
-        let ep_in = alt.endpoint_interrupt_in(32, 4);
-        assert_eq!(ep_in.info().addr.index(), ep as usize);
-        let ep_out = alt.endpoint_interrupt_out(32, 8);
-        assert_eq!(ep_out.info().addr.index(), ep as usize);
-
-        XInput { ep_in, ep_out }
-    }
-}
-
-fn psx_to_xinput(psx_data: &[u8; 6]) -> [u8; 20] {
-    let mut xinput_data = [0_u8; 20];
-
-    xinput_data[0] = 0; // Message type
-    xinput_data[1] = 20; // Length
+fn psx_to_xinput(psx_data: &[u8; 6]) -> [u8; 12] {
+    let mut xinput_data = [0_u8; 12];
 
     let map_bit = |psx_byte: u8, from_bit, to_bit| {
         if psx_byte & (1_u8 << from_bit) == 0_u8 {
@@ -81,24 +37,24 @@ fn psx_to_xinput(psx_data: &[u8; 6]) -> [u8; 20] {
         }
     };
 
-    xinput_data[2] |= map_bit(psx_data[0], 4, 0); // dpad up
-    xinput_data[2] |= map_bit(psx_data[0], 6, 1); // dpad down
-    xinput_data[2] |= map_bit(psx_data[0], 7, 2); // dpad left
-    xinput_data[2] |= map_bit(psx_data[0], 5, 3); // dpad right
-    xinput_data[2] |= map_bit(psx_data[0], 3, 4); // start
-    xinput_data[2] |= map_bit(psx_data[0], 0, 5); // select
-    xinput_data[2] |= map_bit(psx_data[0], 1, 6); // L3
-    xinput_data[2] |= map_bit(psx_data[0], 2, 7); // R3
+    xinput_data[0] |= map_bit(psx_data[0], 4, 0); // dpad up
+    xinput_data[0] |= map_bit(psx_data[0], 6, 1); // dpad down
+    xinput_data[0] |= map_bit(psx_data[0], 7, 2); // dpad left
+    xinput_data[0] |= map_bit(psx_data[0], 5, 3); // dpad right
+    xinput_data[0] |= map_bit(psx_data[0], 3, 4); // start
+    xinput_data[0] |= map_bit(psx_data[0], 0, 5); // select
+    xinput_data[0] |= map_bit(psx_data[0], 1, 6); // L3
+    xinput_data[0] |= map_bit(psx_data[0], 2, 7); // R3
 
-    xinput_data[3] |= map_bit(psx_data[1], 2, 0); // L1
-    xinput_data[3] |= map_bit(psx_data[1], 3, 1); // R1
-    xinput_data[3] |= map_bit(psx_data[1], 6, 4); // A
-    xinput_data[3] |= map_bit(psx_data[1], 5, 5); // B
-    xinput_data[3] |= map_bit(psx_data[1], 7, 6); // X
-    xinput_data[3] |= map_bit(psx_data[1], 4, 7); // Y
+    xinput_data[1] |= map_bit(psx_data[1], 2, 0); // L1
+    xinput_data[1] |= map_bit(psx_data[1], 3, 1); // R1
+    xinput_data[1] |= map_bit(psx_data[1], 6, 4); // A
+    xinput_data[1] |= map_bit(psx_data[1], 5, 5); // B
+    xinput_data[1] |= map_bit(psx_data[1], 7, 6); // X
+    xinput_data[1] |= map_bit(psx_data[1], 4, 7); // Y
 
-    xinput_data[4] = map_bit(psx_data[1], 0, 0) * 0xFF; // L2
-    xinput_data[5] = map_bit(psx_data[1], 1, 0) * 0xFF; // R2
+    xinput_data[2] = map_bit(psx_data[1], 0, 0) * 0xFF; // L2
+    xinput_data[3] = map_bit(psx_data[1], 1, 0) * 0xFF; // R2
 
     let scale_axis = |psx_axis: u8, invert: bool| {
         let mut xinput_axis =
@@ -108,25 +64,12 @@ fn psx_to_xinput(psx_data: &[u8; 6]) -> [u8; 20] {
         }
         xinput_axis.to_le_bytes()
     };
-    [xinput_data[6], xinput_data[7]] = scale_axis(psx_data[4], false);
-    [xinput_data[8], xinput_data[9]] = scale_axis(psx_data[5], true);
-    [xinput_data[10], xinput_data[11]] = scale_axis(psx_data[2], false);
-    [xinput_data[12], xinput_data[13]] = scale_axis(psx_data[3], true);
+    [xinput_data[4], xinput_data[5]] = scale_axis(psx_data[4], false);
+    [xinput_data[6], xinput_data[7]] = scale_axis(psx_data[5], true);
+    [xinput_data[8], xinput_data[9]] = scale_axis(psx_data[2], false);
+    [xinput_data[10], xinput_data[11]] = scale_axis(psx_data[3], true);
 
     xinput_data
-}
-
-async fn run_controller<'d>(
-    mut xinput: XInput<'d, usb::Driver<'d, peripherals::USB>>,
-    psx_data: &PsxData,
-) -> ! {
-    loop {
-        let psx_data = psx_data.get();
-        let xinput_data = psx_to_xinput(&psx_data);
-
-        //debug!("data={=[u8]:X}", xinput_data);
-        unwrap!(xinput.ep_in.write(&xinput_data).await);
-    }
 }
 
 async fn poll_psx(
@@ -135,21 +78,33 @@ async fn poll_psx(
     rx_dma: &mut peripherals::DMA_CH0,
     tx_dma: &mut peripherals::DMA_CH1,
 ) -> Option<[u8; 32]> {
+    let mut rumble_data = [(0_u8, 0_u8); 4];
+    for (rumble_data, state) in rumble_data.iter_mut().zip(&CONTROLLER_STATE) {
+        *rumble_data = state.rumble();
+    }
+
+    let mut command = [0_u8; 35];
+
+    // header
+    command[0] = 0x01; // controller (not memory card)
+    command[1] = 0x42; // poll
+    command[2] = 0x01; // multitap
+
+    // controller data
+    for i in 0..4 {
+        let offset = 3 + i * 8;
+        let (strong, weak) = CONTROLLER_STATE[i].rumble();
+        command[offset + 0] = 0x42; // poll
+        command[offset + 4] = weak; // right small motor
+        command[offset + 5] = strong; // left big motor
+    }
+
     sm0.clear_fifos();
     irq_flags.set(0); // ACK flag
     sm0.set_enable(true);
 
     let (rx, tx) = sm0.rx_tx();
 
-    let command = [
-        0x01_u8, // controller (not memory card)
-        0x42,    // poll
-        0x01,    // multitap
-        0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 1
-        0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 2
-        0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 3
-        0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 4
-    ];
     let tx_fut = tx.dma_push(tx_dma.into_ref(), &command);
 
     let mut response = [0x0_u8; 35];
@@ -232,19 +187,23 @@ fn main() -> ! {
     // Configure the USB stack
     let driver = usb::Driver::new(p.USB, Irqs);
 
-    //let mut config = embassy_usb::Config::new(0x045E, 0x0719);
-    let mut config = embassy_usb::Config::new(0x045E, 0x028E);
-    config.device_release = 0x0114;
-    config.manufacturer = Some("©Microsoft Corporation");
-    config.product = Some("Controller");
-    config.serial_number = Some("04B229A");
-    config.max_power = 500;
+    let mut config = embassy_usb::Config::new(0x045E, 0x0719);
+    config.device_class = 0xFF;
+    config.device_sub_class = 0xFF;
+    config.device_protocol = 0xFF;
+    config.device_release = 0x0100;
+    config.manufacturer = Some("©Microsoft");
+    config.product = Some("Xbox 360 Wireless Receiver for Windows");
+    config.serial_number = Some("E0CB7AD0");
+    config.max_power = 260;
     config.max_packet_size_0 = 64;
 
     let mut device_descriptor = [0; 20];
-    let mut config_descriptor = [0; 112];
+    let mut config_descriptor = [0; 324];
     let mut bos_descriptor = [0; 12];
-    let mut control_buf = [0; 64];
+    // Must be bigger than than n * 2 + 2 where n is the number of characters
+    // in the longest string descriptor.
+    let mut control_buf = [0; 128];
 
     let mut builder = embassy_usb::Builder::new(
         driver,
@@ -254,24 +213,34 @@ fn main() -> ! {
         &mut bos_descriptor,
         &mut control_buf,
     );
-    let mut c0 = XInput::new(&mut builder, 1);
+
+    // The first 4 bytes should match the USB serial number descriptor.
+    let mut serial_number_handler = SerialNumberHandler([0xe0, 0xcb, 0x7a, 0xd0, 0x0a, 0x89, 0xb7]);
+    builder.handler(&mut serial_number_handler);
+
+    let mut c0 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[0]);
+    let mut c1 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[1]);
+    let mut c2 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[2]);
+    let mut c3 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[3]);
 
     let mut usb = builder.build();
 
     // USB
     let usb = pin!(async { usb.run().await });
 
-    // Controller data shawed between tasks
-    let psx_data = &[PSX_DATA_INIT; 4];
-
     // Controllers
-    let c0 = pin!(async move { run_controller(c0, &psx_data[0]).await });
+    let c0 = pin!(async move { c0.run().await });
+    let c1 = pin!(async move { c1.run().await });
+    let c2 = pin!(async move { c2.run().await });
+    let c3 = pin!(async move { c3.run().await });
+
+    let mut prev_psx_data = [[0xFF_u8, 0xFF, 0x80, 0x80, 0x80, 0x80]; 4];
 
     // PSX protocol: SPI with LSB first and special ack signal
-    let psx_spi = pin!(async move {
+    let psx_spi = pin!(async {
         let mut led = Output::new(p.PIN_25, Level::Low);
 
-        let mut ticker = Ticker::every(Duration::from_millis(2));
+        let mut ticker = Ticker::every(Duration::from_millis(10));
         let mut fail_count = 0;
         loop {
             ticker.next().await;
@@ -284,10 +253,19 @@ fn main() -> ! {
             if let Some(poll_data) = poll_data {
                 led.set_high();
 
-                psx_data[0].set(poll_data[2..8].try_into().unwrap());
-                psx_data[1].set(poll_data[10..16].try_into().unwrap());
-                psx_data[2].set(poll_data[18..24].try_into().unwrap());
-                psx_data[3].set(poll_data[26..32].try_into().unwrap());
+                for i in 0..CONTROLLER_STATE.len() {
+                    let idx_from = 2 + 8 * i;
+                    let idx_to = idx_from + 6;
+
+                    let prev_psx_data = &mut prev_psx_data[i];
+                    let psx_data: [u8; 6] = unwrap!(poll_data[idx_from..idx_to].try_into());
+                    if *prev_psx_data != psx_data {
+                        let state = &CONTROLLER_STATE[i];
+                        state.set_available(true);
+                        state.send_xinput(psx_to_xinput(&psx_data));
+                        *prev_psx_data = psx_data;
+                    }
+                }
             } else {
                 fail_count += 1;
                 warn!("PSX SPI fail_count={=usize}", fail_count);
@@ -295,10 +273,7 @@ fn main() -> ! {
         }
     });
 
-    lilos::exec::run_tasks(
-        &mut [usb, c0, /*c1, c2, c3,*/ psx_spi],
-        lilos::exec::ALL_TASKS,
-    )
+    lilos::exec::run_tasks(&mut [usb, c0, c1, c2, c3, psx_spi], lilos::exec::ALL_TASKS)
 }
 
 #[defmt::panic_handler]

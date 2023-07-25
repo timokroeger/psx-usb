@@ -4,12 +4,74 @@ https://github.com/DJm00n/ControllersInfo/
 
 # Xbox 360
 
-wireless receiver:
+## wireless receiver
+
+14 len = 20
+22 type = wireless gamepad descriptor
+00 01 ???
+13 81 endpoint descriptor len=3
+    1D data len max = 29
+    00 ???
+    17 data len min? = 23
+01 02 08 padding?
+13 01 endpoint descriptor len=3
+    0C data len max = 12
+    00 ???
+    0C data len min = 12
+01 02 08 padding?
+
+0C len = 12
+22 type = wireless gamepad descriptor
+00 01 ???
+01 82 endpoint descriptor len=1
+    00 data len max = 0
+40 padding?
+01 02
+    20 data len max = 32
+00 padding?
+
+wireless receiver (old version?):
 https://steamcommunity.com/app/353380/discussions/6/3554966516820346816/
 
-unknown discriptor comparison:
+Sends the serial number on the control endpoint after startup:
+Setup Data
+    bmRequestType: 0xc0
+        1... .... = Direction: Device-to-host
+        .10. .... = Type: Vendor (0x2)
+        ...0 0000 = Recipient: Device (0x00)
+    bRequest: 1
+    wValue: 0x0001
+    wIndex: 0 (0x0000)
+    wLength: 7
+CONTROL response data: e0cb7ad00a89b7
+Last three bytes unknown
+
+### OUT data on controller each endpoint:
+after startup:
+000008400000000000000000 LED off
+010309010000000000000000 rumble?
+010308000000000000000000 rumble?
+010309000000000000000000 rumble?
+
+every 2.5 seconds:
+08000fc00000000000000000 status request
+
+### IN data
+0800 after a status request
+
+No change in data after pressing the button to start pairing (if no controllers are available)
+
+## wired
+
+unknown descriptor comparison:
 
 10 01 01 24 81 14 03 00 03 13 01 00 03 00        1.14    gb2040
 00 01 01 25 81 14 00 00 00 00 13 01 08 00 00     1.14    https://pastebin.com/aF8tDkji
 00 01 01 25 81 14 00 00 00 00 13 01 08 00 00     1.14    https://gist.github.com/DJm00n/a6bbcb810879daa9354dee4a02a6b34e
 00 01 01 25 81 14 00 00 00 00 13 05 08 00 00     1.10    white
+
+after startup:
+OUT1: 01 03 02 <-\
+OUT1: 02 08 03   |
+OUT1: (nack?) ---/
+OUT1: 01 03 02

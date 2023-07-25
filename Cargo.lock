@@ -357,6 +357,7 @@ source = "git+https://github.com/embassy-rs/embassy/?rev=4d1d125f4157084668a949f
 dependencies = [
  "cfg-if",
  "critical-section",
+ "defmt",
  "embedded-io",
  "futures-util",
  "heapless",
@@ -984,6 +985,7 @@ dependencies = [
  "defmt-rtt",
  "embassy-futures",
  "embassy-rp",
+ "embassy-sync",
  "embassy-time",
  "embassy-usb",
  "fixed",
