@@ -117,7 +117,7 @@ async fn poll_psx(
     let mut response = [0x0_u8; 35];
     let rx_fut = rx.dma_pull(rx_dma.into_ref(), &mut response);
 
-    let _ = with_timeout(Duration::from_micros(900), join(tx_fut, rx_fut)).await;
+    let _ = with_timeout(Duration::from_micros(1800), join(tx_fut, rx_fut)).await;
 
     sm0.set_enable(false);
 
@@ -159,8 +159,8 @@ fn main() -> ! {
     config.use_program(&common.load_program(&psx_spi), &[&sck_clk]);
     config.set_in_pins(&[&rxd_miso]);
     config.set_out_pins(&[&txd_mosi]);
-    // 2MHz PIO clock gives SPI frequency of 500kHz
-    config.clock_divider = (U56F8!(125_000_000) / U56F8!(2_000_000)).to_fixed();
+    // 1MHz PIO clock gives SPI frequency of 250kHz
+    config.clock_divider = (U56F8!(125_000_000) / U56F8!(1_000_000)).to_fixed();
     // LSB first
     config.shift_in = ShiftConfig {
         threshold: 32,
