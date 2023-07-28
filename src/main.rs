@@ -146,10 +146,8 @@ fn main() -> ! {
     // SM0 acts as a master SPI peripheral which waits for IRQ0 to be set before
     // clocking out the next byte.
     let psx_spi = pio_proc::pio_file!("src/psx.pio", select_program("spi"));
-    let psx_spi = RelocatedProgram::new(&psx_spi.program);
-    let psx_spi_len = psx_spi.code().count();
     let mut config = pio::Config::default();
-    config.use_program(&common.load_program(&psx_spi), &[&sck_clk]);
+    config.use_program(&common.load_program(&psx_spi.program), &[&sck_clk]);
     config.set_in_pins(&[&rxd_miso]);
     config.set_out_pins(&[&txd_mosi]);
     // 1MHz PIO clock gives SPI frequency of 250kHz
@@ -174,9 +172,8 @@ fn main() -> ! {
 
     // SM1 continuously monitors the ACK line and sets IRQ1 if there is an acknowledge.
     let psx_ack = pio_proc::pio_file!("src/psx.pio", select_program("ack"));
-    let psx_ack = RelocatedProgram::new_with_origin(&psx_ack.program, psx_spi_len as u8);
     let mut config = pio::Config::default();
-    config.use_program(&common.load_program(&psx_ack), &[]);
+    config.use_program(&common.load_program(&psx_ack.program), &[]);
     config.set_in_pins(&[&dsr_ack]);
     sm1.set_config(&config);
     sm1.set_enable(true);
