@@ -6,11 +6,11 @@ mod xinput;
 
 use core::pin::pin;
 
+use ::pio::{Instruction, InstructionOperands, MovDestination, MovOperation, MovSource};
 use defmt::*;
 use embassy_futures::join::join;
 use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::pio::{self, Direction, IrqFlags, Pio, ShiftConfig, ShiftDirection, StateMachine};
-use embassy_rp::relocate::RelocatedProgram;
 use embassy_rp::{bind_interrupts, peripherals, usb, Peripheral};
 use embassy_time::{with_timeout, Duration, Ticker};
 use fixed::traits::ToFixed;
@@ -84,6 +84,7 @@ async fn poll_psx(
     }
 
     let mut command = [0_u8; 35];
+    let mut response = [0_u8; 35];
 
     // header
     command[0] = 0x01; // controller (not memory card)
@@ -99,20 +100,14 @@ async fn poll_psx(
         command[offset + 5] = strong; // left big motor
     }
 
-    sm0.clear_fifos();
-    irq_flags.set(0); // ACK flag
-    sm0.set_enable(true);
-
     let (rx, tx) = sm0.rx_tx();
-
     let tx_fut = tx.dma_push(tx_dma.into_ref(), &command);
-
-    let mut response = [0x0_u8; 35];
     let rx_fut = rx.dma_pull(rx_dma.into_ref(), &mut response);
 
+    // Start the transaction by setting the ACK irq flag.
+    irq_flags.set(0);
     let _ = with_timeout(Duration::from_micros(1800), join(tx_fut, rx_fut)).await;
-
-    sm0.set_enable(false);
+    sm0.clear_fifos();
 
     //debug!("{=[u8]:X}", response);
     if response[1] == 0x80 && response[2] == 0x5A {
@@ -167,8 +162,23 @@ fn main() -> ! {
     sm0.set_pin_dirs(Direction::Out, &[&sck_clk, &txd_mosi]);
     // The pio_file() proc macro fails to compile the instruction
     // `mov x, !null` to set the register X to 0xFFFFFFFF.
-    // Execute to compiled version of this instruction as a workaround.
-    unsafe { sm0.exec_instr(0xa02b) };
+    // Execute the compiled version of this instruction from here as a workaround.
+    // Also has the nice side effect that it sets the clock line to idle high.
+    unsafe {
+        sm0.exec_instr(
+            Instruction {
+                operands: InstructionOperands::MOV {
+                    destination: MovDestination::X,
+                    op: MovOperation::Invert,
+                    source: MovSource::NULL,
+                },
+                delay: 0,
+                side_set: Some(1),
+            }
+            .encode(psx_spi.program.side_set),
+        )
+    };
+    sm0.set_enable(true);
 
     // SM1 continuously monitors the ACK line and sets IRQ1 if there is an acknowledge.
     let psx_ack = pio_proc::pio_file!("src/psx.pio", select_program("ack"));
@@ -237,7 +247,7 @@ fn main() -> ! {
     let psx_spi = pin!(async {
         let mut led = Output::new(p.PIN_25, Level::Low);
 
-        let mut ticker = Ticker::every(Duration::from_millis(10));
+        let mut ticker = Ticker::every(Duration::from_millis(2));
         let mut fail_count = 0;
         loop {
             ticker.next().await;
