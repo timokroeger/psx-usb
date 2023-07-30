@@ -1,9 +1,10 @@
 use core::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 
 use defmt::{debug, info, unwrap, warn};
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{select3, Either3};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
+use embassy_time::{Duration, Instant, Timer};
 use embassy_usb::control::{InResponse, Request, RequestType};
 use embassy_usb::driver::{Driver, Endpoint, EndpointIn, EndpointOut};
 use embassy_usb::Handler;
@@ -205,9 +206,20 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
 
     pub async fn run(mut self) -> ! {
         let mut out_data = [0_u8; 32];
+
+        // Use this deadline to send a n "idle" message when there was no change
+        // in pad data for more than 11ms. Only active after sending pad data.
+        let mut idle_msg_deadline = Instant::MAX;
+
         loop {
-            match select(self.state.xinput.wait(), self.ep_out.read(&mut out_data)).await {
-                Either::First(xinput_data) => {
+            match select3(
+                self.state.xinput.wait(),
+                Timer::at(idle_msg_deadline),
+                self.ep_out.read(&mut out_data),
+            )
+            .await
+            {
+                Either3::First(xinput_data) => {
                     let mut data = [0_u8; 29];
                     data[0] = 0x00; // Outer message type?
                     data[1] = 0x01; // Message contains xinput data
@@ -216,8 +228,15 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
                     data[5] = 0x13; // Inner message length
                     data[6..18].copy_from_slice(&xinput_data);
                     unwrap!(self.ep_in.write(&data).await);
+                    idle_msg_deadline = Instant::now() + Duration::from_millis(11);
                 }
-                Either::Second(n) => {
+                Either3::Second(_) => {
+                    let mut data = [0_u8; 29];
+                    data[3] = 0xF0;
+                    unwrap!(self.ep_in.write(&data).await);
+                    idle_msg_deadline = Instant::MAX;
+                }
+                Either3::Third(n) => {
                     let out_data = OutData::from_raw(&out_data[..unwrap!(n)]);
                     self.handle_out_data(out_data).await;
                 }
@@ -255,14 +274,16 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
                     }
                     ControllerInfoState::Unknown2 => {
                         self.controller_info_state = ControllerInfoState::None;
-                        // The official adapter sends 4 additional messages:
+                        // The original adapter sends 4 additional messages:
                         // let mut unknown2a = [0_u8; 29];
                         // unknown2a[3] = 0x13;
                         // unknown2a[4] = 0xA2;
                         // let mut unknown2b = [0_u8; 29];
                         // unknown2b[3] = 0xF0;
+                        // Timer::after(Duration::from_millis(8)).await;
                         // for buf in [&unknown2a, &unknown2b, &unknown2a, &unknown2b] {
-                        //     debug!("{=u8}-> {=[u8]:#X}", self.ep_in_addr(), *buf);
+                        //     Timer::after(Duration::from_millis(8)).await;
+                        //     debug!("{=u8}-> {=[u8]:#X}...", self.ep_in_addr(), buf[..6]);
                         //     unwrap!(self.ep_in.write(buf).await);
                         // }
                     }
