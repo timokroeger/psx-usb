@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 
-use defmt::{debug, unwrap};
+use defmt::{debug, info, unwrap, warn};
 use embassy_futures::select::{select, Either};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
@@ -59,10 +59,41 @@ impl State {
     }
 }
 
+enum OutData<'d> {
+    ConnectionStatus,
+    Ack,
+    Led(u8),
+    Rumble(u8, u8),
+    Unknown(&'d [u8]),
+}
+
+impl<'d> OutData<'d> {
+    fn from_raw(out_data: &'d [u8]) -> Self {
+        if out_data.len() != 12 {
+            return OutData::Unknown(out_data);
+        }
+
+        match out_data {
+            &[0x08, 0x00, 0x0F, 0xC0, ..] => OutData::ConnectionStatus,
+            &[0x00, 0x00, 0x00, 0x40, ..] => OutData::Ack,
+            &[0x00, 0x00, 0x08, led, ..] if led & 0x40 == 0x40 => OutData::Led(led & 0x0F),
+            &[0x00, 0x01, 0x0F, 0xC0, 0x00, strong, weak, ..] => OutData::Rumble(strong, weak),
+            data => OutData::Unknown(data),
+        }
+    }
+}
+
+enum ControllerInfoState {
+    None,
+    Unknown1,
+    Unknown2,
+}
+
 pub struct XInput<'d, D: Driver<'d>> {
     ep_in: D::EndpointIn,
     ep_out: D::EndpointOut,
     state: &'d State,
+    controller_info_state: ControllerInfoState,
 }
 
 impl<'d, D: Driver<'d>> XInput<'d, D> {
@@ -149,16 +180,27 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
             ep_in,
             ep_out,
             state,
+            controller_info_state: ControllerInfoState::None,
         }
     }
 
-    async fn send_status(&mut self) {
-        let data: [u8; 2] = if self.state.available.load(Ordering::Relaxed) {
-            [0x08, 0x80]
+    fn ep_in_addr(&self) -> u8 {
+        self.ep_in.info().addr.index() as u8
+    }
+
+    fn ep_out_addr(&self) -> u8 {
+        self.ep_out.info().addr.index() as u8
+    }
+
+    async fn send_connection_status(&mut self) {
+        let available = self.state.available.load(Ordering::Relaxed);
+        if available {
+            debug!("{=u8}-> Controller connected", self.ep_in_addr());
+            unwrap!(self.ep_in.write(&[0x08, 0x80]).await);
         } else {
-            [0x08, 0x00]
+            debug!("{=u8}-> Controller disconnected", self.ep_out_addr());
+            unwrap!(self.ep_in.write(&[0x08, 0x00]).await);
         };
-        unwrap!(self.ep_in.write(&data).await);
     }
 
     pub async fn run(mut self) -> ! {
@@ -169,27 +211,80 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
                     let mut data = [0_u8; 29];
                     data[0] = 0x00; // Outer message type?
                     data[1] = 0x01; // Message contains xinput data
+                    data[3] = 0xF0; // Unused
                     data[4] = 0x00; // Inner message type
                     data[5] = 0x13; // Inner message length
                     data[6..18].copy_from_slice(&xinput_data);
                     unwrap!(self.ep_in.write(&data).await);
                 }
                 Either::Second(n) => {
-                    let out_data = &out_data[..unwrap!(n)];
-                    debug!("OUT DATA: {=[u8]:X}", out_data);
-
-                    if out_data.len() >= 4 && &out_data[..4] == &[0x08, 0x00, 0x0f, 0xc0] {
-                        // Status request
-                        self.send_status().await;
-                    } else if out_data.len() >= 7
-                        && &out_data[..5] == &[0x00, 0x01, 0x0F, 0xC0, 0x00]
-                    {
-                        // Rumble data
-                        let rumble16 = u16::from_le_bytes([out_data[5], out_data[6]]);
-                        self.state.rumble.store(rumble16, Ordering::Relaxed);
-                    }
+                    let out_data = OutData::from_raw(&out_data[..unwrap!(n)]);
+                    self.handle_out_data(out_data).await;
                 }
             }
         }
+    }
+
+    async fn handle_out_data(&mut self, out_data: OutData<'_>) -> bool {
+        match out_data {
+            OutData::ConnectionStatus => {
+                debug!("{=u8}<- Controller connected?", self.ep_out_addr());
+                self.controller_info_state = ControllerInfoState::Unknown1;
+                self.send_connection_status().await;
+            }
+            OutData::Led(led) => debug!("{=u8}<- LED data {=u8}", self.ep_out_addr(), led),
+            OutData::Ack => {
+                debug!("{=u8}<- ACK", self.ep_out_addr(),);
+                match self.controller_info_state {
+                    ControllerInfoState::None => warn!("Unexpected ACK message from host."),
+                    ControllerInfoState::Unknown1 => {
+                        self.controller_info_state = ControllerInfoState::Unknown2;
+                        let controller_info = [
+                            0x00, 0x0F, 0x00, 0xF0, // Controller info message
+                            0xF0, // Ignored
+                            0xCC, // Important for windows to detect the pad
+                            0xFF, 0xFF, 0xFF, 0xFF, // Wireless adapter serial number
+                            0x58, 0x91, 0xb3, 0xf0, 0x00, 0x09, // Controller serial number?
+                            0x13, // Important for windows to detect the pad
+                            // The windows driver does not care about the remaining bytes.
+                            0xA3, 0x20, 0x1D, 0x30, 0x03, 0x40, 0x01, 0x50, 0x01, 0xFF, 0xFF, 0xFF,
+                        ];
+
+                        debug!("{=u8}-> {=[u8]:#X}", self.ep_in_addr(), controller_info);
+                        unwrap!(self.ep_in.write(&controller_info).await);
+                    }
+                    ControllerInfoState::Unknown2 => {
+                        self.controller_info_state = ControllerInfoState::None;
+                        // The official adapter sends 4 additional messages:
+                        // let mut unknown2a = [0_u8; 29];
+                        // unknown2a[3] = 0x13;
+                        // unknown2a[4] = 0xA2;
+                        // let mut unknown2b = [0_u8; 29];
+                        // unknown2b[3] = 0xF0;
+                        // for buf in [&unknown2a, &unknown2b, &unknown2a, &unknown2b] {
+                        //     debug!("{=u8}-> {=[u8]:#X}", self.ep_in_addr(), *buf);
+                        //     unwrap!(self.ep_in.write(buf).await);
+                        // }
+                    }
+                }
+            }
+            OutData::Rumble(strong, weak) => {
+                debug!(
+                    "{=u8}<- Rumble data strong={=u8:#X} weak={=u8:#X}",
+                    self.ep_out_addr(),
+                    strong,
+                    weak,
+                );
+                let rumble16 = u16::from_le_bytes([strong, weak]);
+                self.state.rumble.store(rumble16, Ordering::Relaxed);
+            }
+            OutData::Unknown(data) => info!(
+                "{=u8}<- Unhandled out data: {=[u8]:X}",
+                self.ep_out_addr(),
+                data
+            ),
+        }
+
+        false
     }
 }

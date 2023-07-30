@@ -222,6 +222,7 @@ fn main() -> ! {
     );
 
     // The first 4 bytes should match the USB serial number descriptor.
+    // Not required for the receiver to be detected by the windows driver.
     let mut serial_number_handler = SerialNumberHandler([0xe0, 0xcb, 0x7a, 0xd0, 0x0a, 0x89, 0xb7]);
     builder.handler(&mut serial_number_handler);
 
