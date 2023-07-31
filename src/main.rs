@@ -201,7 +201,7 @@ fn main() -> ! {
     config.device_release = 0x0100;
     config.manufacturer = Some("Timo Kröger");
     config.product = Some("psx-usb");
-    // config.serial_number = Some("FFFFFFFF");
+    config.serial_number = Some("FFFFFFFF");
     config.max_power = 260;
     config.max_packet_size_0 = 64;
 
@@ -225,9 +225,9 @@ fn main() -> ! {
 
     // The first 4 bytes should match the USB serial number descriptor.
     // Not required for the receiver to be detected by the windows driver.
-    // let mut serial_number_handler =
-    //     xinput::SerialNumberHandler([0xFF, 0xFF, 0xFF, 0xFF, 0x0a, 0x89, 0xB7]);
-    // builder.handler(&mut serial_number_handler);
+    let mut serial_number_handler =
+        xinput::SerialNumberHandler([0xFF, 0xFF, 0xFF, 0xFF, 0x0a, 0x89, 0xB7]);
+    builder.handler(&mut serial_number_handler);
 
     let mut c0 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[0], false);
     let mut c1 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[1], false);
