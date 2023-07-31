@@ -269,7 +269,6 @@ fn main() -> ! {
                     let psx_data: [u8; 6] = unwrap!(poll_data[idx_from..idx_to].try_into());
                     if *prev_psx_data != psx_data {
                         let state = &CONTROLLER_STATE[i];
-                        state.set_available(true);
                         state.send_xinput(psx_to_xinput(&psx_data));
                         *prev_psx_data = psx_data;
                     }

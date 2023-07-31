@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use core::sync::atomic::{AtomicU16, Ordering};
 
 use defmt::{debug, info, unwrap, warn};
 use embassy_futures::select::{select3, Either3};
@@ -29,7 +29,6 @@ impl Handler for SerialNumberHandler {
 
 #[derive(Default)]
 pub struct State {
-    available: AtomicBool,
     xinput: Signal<CriticalSectionRawMutex, [u8; 12]>,
     // right (weak) rumble in high byte
     // left (strong) rumble in low byte
@@ -39,14 +38,9 @@ pub struct State {
 impl State {
     pub const fn new() -> Self {
         State {
-            available: AtomicBool::new(false),
             xinput: Signal::new(),
             rumble: AtomicU16::new(0),
         }
-    }
-
-    pub fn set_available(&self, available: bool) {
-        self.available.store(available, Ordering::Relaxed);
     }
 
     pub fn send_xinput(&self, data: [u8; 12]) {
@@ -85,6 +79,7 @@ impl<'d> OutData<'d> {
 }
 
 enum ControllerInfoState {
+    Disconnected,
     None,
     Unknown1,
     Unknown2,
@@ -181,7 +176,7 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
             ep_in,
             ep_out,
             state,
-            controller_info_state: ControllerInfoState::None,
+            controller_info_state: ControllerInfoState::Disconnected,
         }
     }
 
@@ -193,12 +188,13 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
         self.ep_out.info().addr.index() as u8
     }
 
-    async fn send_connection_status(&mut self) {
-        let available = self.state.available.load(Ordering::Relaxed);
+    async fn send_connection_status(&mut self, available: bool) {
         if available {
+            self.controller_info_state = ControllerInfoState::Unknown1;
             debug!("{=u8}-> Controller connected", self.ep_in_addr());
             unwrap!(self.ep_in.write(&[0x08, 0x80]).await);
         } else {
+            self.controller_info_state = ControllerInfoState::Disconnected;
             debug!("{=u8}-> Controller disconnected", self.ep_out_addr());
             unwrap!(self.ep_in.write(&[0x08, 0x00]).await);
         };
@@ -220,6 +216,13 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
             .await
             {
                 Either3::First(xinput_data) => {
+                    if matches!(
+                        self.controller_info_state,
+                        ControllerInfoState::Disconnected
+                    ) {
+                        self.send_connection_status(true).await;
+                    }
+
                     let mut data = [0_u8; 29];
                     data[0] = 0x00; // Outer message type?
                     data[1] = 0x01; // Message contains xinput data
@@ -248,14 +251,19 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
         match out_data {
             OutData::ConnectionStatus => {
                 debug!("{=u8}<- Controller connected?", self.ep_out_addr());
-                self.controller_info_state = ControllerInfoState::Unknown1;
-                self.send_connection_status().await;
+                self.send_connection_status(!matches!(
+                    self.controller_info_state,
+                    ControllerInfoState::Disconnected
+                ))
+                .await;
             }
             OutData::Led(led) => debug!("{=u8}<- LED data {=u8}", self.ep_out_addr(), led),
             OutData::Ack => {
                 debug!("{=u8}<- ACK", self.ep_out_addr(),);
                 match self.controller_info_state {
-                    ControllerInfoState::None => warn!("Unexpected ACK message from host."),
+                    ControllerInfoState::Disconnected | ControllerInfoState::None => {
+                        warn!("Unexpected ACK message from host.")
+                    }
                     ControllerInfoState::Unknown1 => {
                         self.controller_info_state = ControllerInfoState::Unknown2;
                         let controller_info = [
