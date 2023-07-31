@@ -15,7 +15,7 @@ use embassy_rp::{bind_interrupts, peripherals, usb, Peripheral};
 use embassy_time::{with_timeout, Duration, Ticker};
 use fixed::traits::ToFixed;
 use fixed_macro::types::U56F8;
-use xinput::{SerialNumberHandler, State, XInput};
+use xinput::{State, XInput};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -199,9 +199,9 @@ fn main() -> ! {
     config.device_sub_class = 0xFF;
     config.device_protocol = 0xFF;
     config.device_release = 0x0100;
-    config.manufacturer = Some("©Microsoft");
-    config.product = Some("Xbox 360 Wireless Receiver for Windows");
-    config.serial_number = Some("E0CB7AD0");
+    config.manufacturer = Some("Timo Kröger");
+    config.product = Some("psx-usb");
+    // config.serial_number = Some("FFFFFFFF");
     config.max_power = 260;
     config.max_packet_size_0 = 64;
 
@@ -212,7 +212,7 @@ fn main() -> ! {
     let mut bos_descriptor = [0; 12];
     // Must be bigger than than n * 2 + 2 where n is the number of characters
     // in the longest string descriptor.
-    let mut control_buf = [0; 128];
+    let mut control_buf = [0; 64];
 
     let mut builder = embassy_usb::Builder::new(
         driver,
@@ -225,8 +225,9 @@ fn main() -> ! {
 
     // The first 4 bytes should match the USB serial number descriptor.
     // Not required for the receiver to be detected by the windows driver.
-    let mut serial_number_handler = SerialNumberHandler([0xe0, 0xcb, 0x7a, 0xd0, 0x0a, 0x89, 0xb7]);
-    builder.handler(&mut serial_number_handler);
+    // let mut serial_number_handler =
+    //     xinput::SerialNumberHandler([0xFF, 0xFF, 0xFF, 0xFF, 0x0a, 0x89, 0xB7]);
+    // builder.handler(&mut serial_number_handler);
 
     let mut c0 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[0], false);
     let mut c1 = XInput::new_wireless(&mut builder, &CONTROLLER_STATE[1], false);
