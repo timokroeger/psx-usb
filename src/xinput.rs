@@ -93,7 +93,11 @@ pub struct XInput<'d, D: Driver<'d>> {
 }
 
 impl<'d, D: Driver<'d>> XInput<'d, D> {
-    pub fn new_wireless(builder: &mut embassy_usb::Builder<'d, D>, state: &'d State) -> Self {
+    pub fn new_wireless(
+        builder: &mut embassy_usb::Builder<'d, D>,
+        state: &'d State,
+        headset: bool,
+    ) -> Self {
         const CLASS_VENDOR: u8 = 0xFF;
         const SUBCLASS_XINPUT: u8 = 0x5D;
         const PROTOCOL_WIRELESS: u8 = 0x81;
@@ -137,8 +141,10 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
             ],
         );
 
-        // Unused unknown interface
-        {
+        // Headset data interface
+        // When enabled hte windows driver polls for controller and headset
+        // availability every 2.5 seconds.
+        if headset {
             drop(function);
             let mut function =
                 builder.function(CLASS_VENDOR, SUBCLASS_XINPUT, PROTOCOL_WIRELESS_UNKNOWN);
@@ -266,6 +272,9 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
                     }
                     ControllerInfoState::Unknown1 => {
                         self.controller_info_state = ControllerInfoState::Unknown2;
+
+                        // This message is required for windows to detect the controller.
+                        // Interestingly Steam detects the controller without that message.
                         let controller_info = [
                             0x00, 0x0F, 0x00, 0xF0, // Controller info message
                             0xF0, // Ignored
@@ -273,8 +282,9 @@ impl<'d, D: Driver<'d>> XInput<'d, D> {
                             0xFF, 0xFF, 0xFF, 0xFF, // Wireless adapter serial number
                             0x58, 0x91, 0xb3, 0xf0, 0x00, 0x09, // Controller serial number?
                             0x13, // Important for windows to detect the pad
+                            0xA3, // Battery status?
                             // The windows driver does not care about the remaining bytes.
-                            0xA3, 0x20, 0x1D, 0x30, 0x03, 0x40, 0x01, 0x50, 0x01, 0xFF, 0xFF, 0xFF,
+                            0x20, 0x1D, 0x30, 0x03, 0x40, 0x01, 0x50, 0x01, 0xFF, 0xFF, 0xFF,
                         ];
 
                         debug!("{=u8}-> {=[u8]:#X}", self.ep_in_addr(), controller_info);

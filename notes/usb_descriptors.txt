@@ -106,11 +106,12 @@ OUT 00 00 00 40 0000000000000000 ???
 IN  00 0f 00 f0 f0cce0cb7ad05891b3f0000913a3201d300340015001ffffff
 OUT 00 00 00 40 0000000000000000 ???
 IN  00 0f 00 f0 f0cce0cb7ad05891b3f0000913a3201d300340015001ffffff
+        000f00f0f0cce0cb7ad05891b3f0000913a3201d300340015001ffffff
 
 No change in data after pressing the button to start pairing (if no controllers are available)
 
 ### IN DATA interpretation
-byte 0: 0x00 = other, 0x08 = status data
+byte 0: 0x00 = controller, 0x08 = adapter
 
 byte 1: (0:0x00) 0x00 = ???, 0x01 = pad data follows, 0x0F = info, 0xF8 = ???
 byte 1: (0:0x08) 0x80 = pad present, 0x00 pad not present
