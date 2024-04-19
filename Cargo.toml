@@ -7,22 +7,17 @@ license = "MIT/Apache-2.0"
 
 [dependencies]
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
-cortex-m-rt = "0.7.3"
-defmt = "0.3.5"
+cortex-m-rt = "0.7.4"
+defmt = "0.3.6"
 defmt-rtt = "0.4"
-embassy-futures = { version = "0.1.0", features = ["defmt"] }
-embassy-sync = { version = "0.2.0", features = ["defmt"] }
+embassy-futures = { version = "0.1.1", features = ["defmt"] }
+embassy-sync = { version = "0.5.0", features = ["defmt"] }
 embassy-rp = { version = "0.1.0", features = [
     "defmt",
-    "nightly",
     "unstable-pac",
     "time-driver",
 ] }
-embassy-time = { version = "0.1.2", features = [
-    "defmt",
-    "nightly",
-    "generic-queue-8",
-] }
+embassy-time = { version = "0.3.0", features = ["defmt", "generic-queue-8"] }
 embassy-usb = { version = "0.1.0", features = [
     "defmt",
     "max-interface-count-8",
@@ -35,12 +30,12 @@ pio = "0.2.1"
 pio-proc = "0.2.2"
 
 [patch.crates-io]
-embassy-futures = { git = "https://github.com/embassy-rs/embassy/", rev = "e3cc0d168c1455d63df55f758cd875d78120f04d" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy/", rev = "e3cc0d168c1455d63df55f758cd875d78120f04d" }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy/", rev = "e3cc0d168c1455d63df55f758cd875d78120f04d" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy/", rev = "e3cc0d168c1455d63df55f758cd875d78120f04d" }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy/", rev = "e3cc0d168c1455d63df55f758cd875d78120f04d" }
-lilos = { git = "https://github.com/cbiffle/lilos", rev = "b1dba11a500c4d4d57ce6915decf54ad80ed0029" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy/", rev = "00708d8c2793bf8c59624ec92a6895e2a3a7f586" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy/", rev = "00708d8c2793bf8c59624ec92a6895e2a3a7f586" }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy/", rev = "00708d8c2793bf8c59624ec92a6895e2a3a7f586" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy/", rev = "00708d8c2793bf8c59624ec92a6895e2a3a7f586" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy/", rev = "00708d8c2793bf8c59624ec92a6895e2a3a7f586" }
+lilos = { git = "https://github.com/cbiffle/lilos", rev = "bcbf626e06e2f5dca4a2b1157b5dbc1fdd809536" }
 
 [profile.dev]
 opt-level = "z"

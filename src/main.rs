@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
 
 mod xinput;
 
@@ -205,7 +204,6 @@ fn main() -> ! {
     config.max_power = 260;
     config.max_packet_size_0 = 64;
 
-    let mut device_descriptor = [0; 20];
     // Enough space to fit configuration descriptors for the controller interfaces
     // and the (optional) headset interfaces.
     let mut config_descriptor = [0; 324];
@@ -217,9 +215,9 @@ fn main() -> ! {
     let mut builder = embassy_usb::Builder::new(
         driver,
         config,
-        &mut device_descriptor,
         &mut config_descriptor,
         &mut bos_descriptor,
+        &mut [],
         &mut control_buf,
     );
 
